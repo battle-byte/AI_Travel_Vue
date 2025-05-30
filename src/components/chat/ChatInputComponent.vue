@@ -19,8 +19,6 @@
         </div>
       </div>
 
-
-
       <div class="chat-input-wrapper">
         <el-input
           v-model="ChatMessage"
@@ -29,11 +27,15 @@
           :placeholder="'给 小V 发送消息，指定你的出行计划把！'"
           class="chat-input-box"
         />
-        <el-button :disabled="ChatMessage.length==0" :icon="Finished" class="send-btn" @click="StartChat" />
+        <el-button
+          :disabled="chatFinish()"
+          :icon="Finished"
+          class="send-btn"
+          @click="StartChat"
+        />
       </div>
     </div>
   </div>
-
 </template>
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
@@ -51,19 +53,40 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const chatOk  =ref<boolean>(false)
+
 const ChatMessage = ref<string>('')
+
 const loginUser = userStore()
-const route = useRoute()
+
 const conversationFlush = conversationStore()
+
 const newChatQuestion = newMessageStore()
+
 const ChatHistory = ref<Messages[]>([])
-const ConversationMessage = ref<Conversations>({ conversationId: '', createdAt: '', title: '', userId: '' })
 
+const chatFinish = ()=>{
+  return ChatMessage.value.length==0 && chatOk
+}
 
-const NewChatRequest = ref<NewChatRequest>({ conversion_id: props.conversationId!, question: '', uid: loginUser.user?.uid! })
+const ConversationMessage = ref<Conversations>({
+  conversationId: '',
+  createdAt: '',
+  title: '',
+  userId: ''
+})
+
+const NewChatRequest = ref<NewChatRequest>({
+  conversion_id: props.conversationId!,
+  question: '',
+  uid: loginUser.user?.uid!
+})
+
 let sse = new SSEService()
 
 const StartChat = () => {
+  // 禁止发送消息
+  chatOk.value=true
   ChatHistory.value.push({
     messageId: Date.now().toString(),
     senderType: AI_SENDER_TYPE.USER,
@@ -75,22 +98,24 @@ const StartChat = () => {
 }
 const GetChatMessage = () => {
   // 1. 保存用户消息
-  NewChatRequest.value.question = ChatMessage.value;
-  ChatMessage.value = ""; // 清空输入框
+  NewChatRequest.value.question = ChatMessage.value
+  ChatMessage.value = '' // 清空输入框
 
   // 2. 预先添加一个空的 AI 消息到聊天历史（作为占位）
-  const aiMessageId = Date.now().toString() + '-ai'; // 生成唯一 ID
+  const aiMessageId = Date.now().toString() + '-ai' // 生成唯一 ID
   ChatHistory.value.push({
     messageId: aiMessageId,
     senderType: AI_SENDER_TYPE.SYSTEM, // 标记为 AI 消息
     content: '', // 初始为空，后续逐步追加
     createdAt: new Date().toISOString(),
     conversationId: props.conversationId!
-  });
+  })
 
   // 3. 建立 SSE 连接
   sse.connect('http://127.0.0.1:8101/gin/chat/sse', 'POST', NewChatRequest.value, (event: any) => {
     if (event.data === 'StreamCompleted') {
+      // 允许发送消息
+      chatOk.value=false
       // 流式传输结束 等待三秒后我们 刷新标题与会话列表
       setTimeout(() => {
         GetConversationMessage()
@@ -98,14 +123,14 @@ const GetChatMessage = () => {
       }, 3000)
     } else {
       // 逐步更新 AI 消息内容
-      const aiMessage = ChatHistory.value.find(msg => msg.messageId === aiMessageId);
+      const aiMessage = ChatHistory.value.find((msg) => msg.messageId === aiMessageId)
       if (aiMessage) {
-        aiMessage.content += event.data; // 追加新内容
+        aiMessage.content += event.data // 追加新内容
         // 触发响应式更新（Vue 3 需要替换引用）
-        ChatHistory.value = [...ChatHistory.value];
+        ChatHistory.value = [...ChatHistory.value]
       }
     }
-  });
+  })
 }
 
 const ListMessage = async () => {
@@ -117,7 +142,7 @@ const ListMessage = async () => {
     ChatHistory.value = res.data.messages
   }
 }
-const GetConversationMessage = async ()=>{
+const GetConversationMessage = async () => {
   if (!props.conversationId || props.conversationId == '') {
     return
   }
@@ -128,13 +153,13 @@ const GetConversationMessage = async ()=>{
 }
 
 // 在组件挂载后，获取聊天记录
-onMounted(() => {
-  ListMessage()
-  GetConversationMessage()
+onMounted(async () => {
+  await ListMessage()
+  await GetConversationMessage()
   if (newChatQuestion.message && newChatQuestion.message != '') {
     ChatMessage.value = newChatQuestion.message
     newChatQuestion.removeMessage() // 清空消息
-    GetChatMessage()
+    StartChat()
   }
 })
 
@@ -163,6 +188,7 @@ watch(
   align-items: center;
   min-height: 80vh;
 }
+
 .conversation-header {
   position: sticky;
   width: 100%;
