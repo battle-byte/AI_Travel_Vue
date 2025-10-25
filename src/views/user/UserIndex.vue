@@ -3,7 +3,7 @@
     <div class="main">
       <el-container>
         <el-container>
-          <el-aside width="200px" v-if="user.user">
+          <el-aside width="200px" >
             <IndexAside/>
           </el-aside>
           <el-main style="background-color:#f7f8f9;padding: 0">
